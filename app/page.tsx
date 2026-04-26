@@ -31,10 +31,19 @@ export default function Home() {
         method: "POST",
         body: formData,
       });
-      const transcribeData = await transcribeRes.json();
 
+      if (transcribeRes.status === 413) {
+        throw new Error("檔案超過伺服器上限（4 MB），請壓縮後重試。");
+      }
+      const transcribeText = await transcribeRes.text();
+      let transcribeData: Record<string, unknown>;
+      try {
+        transcribeData = JSON.parse(transcribeText);
+      } catch {
+        throw new Error(`伺服器錯誤（${transcribeRes.status}），請稍後再試。`);
+      }
       if (!transcribeRes.ok) {
-        throw new Error(transcribeData.error ?? "語音轉文字失敗");
+        throw new Error((transcribeData.error as string) ?? "語音轉文字失敗");
       }
 
       const { segments, fullText, duration, language: detectedLang, speakerCount } =
@@ -48,10 +57,15 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: fullText }),
       });
-      const summarizeData = await summarizeRes.json();
-
+      const summarizeText = await summarizeRes.text();
+      let summarizeData: Record<string, unknown>;
+      try {
+        summarizeData = JSON.parse(summarizeText);
+      } catch {
+        throw new Error(`摘要生成失敗（${summarizeRes.status}），請稍後再試。`);
+      }
       if (!summarizeRes.ok) {
-        throw new Error(summarizeData.error ?? "摘要生成失敗");
+        throw new Error((summarizeData.error as string) ?? "摘要生成失敗");
       }
 
       setProcessStep("done");

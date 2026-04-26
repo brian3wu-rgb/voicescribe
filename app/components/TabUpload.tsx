@@ -9,15 +9,22 @@ interface Props {
 
 const FORMATS = ["MP3", "WAV", "M4A", "MP4"];
 const ACCEPT = ".mp3,.wav,.m4a,.m4v,.mp4,.ogg,.webm,audio/*";
+const MAX_BYTES = 4 * 1024 * 1024; // 4MB — Vercel request body limit
 
 export default function TabUpload({ onFileReady, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [sizeError, setSizeError] = useState("");
 
   const handleFile = useCallback(
     (file: File | null | undefined) => {
       if (!file || disabled) return;
+      if (file.size > MAX_BYTES) {
+        setSizeError(`檔案 ${(file.size / 1024 / 1024).toFixed(1)} MB 超過上限 4 MB，請壓縮後再試。`);
+        return;
+      }
+      setSizeError("");
       setSelectedFile(file);
       onFileReady(file);
     },
@@ -64,6 +71,9 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
           <MusicIcon />
         </div>
 
+        {sizeError && (
+          <p className="text-xs text-red-500 mt-2">{sizeError}</p>
+        )}
         {selectedFile ? (
           <div className="space-y-1">
             <p className="font-semibold text-warm-800">{selectedFile.name}</p>
@@ -77,7 +87,7 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
               拖曳音檔或點擊上傳
             </p>
             <p className="text-sm text-warm-400">
-              支援 MP3、WAV、M4A、MP4 格式，最大 25MB
+              支援 MP3、WAV、M4A、MP4 格式，最大 4 MB
             </p>
           </div>
         )}
