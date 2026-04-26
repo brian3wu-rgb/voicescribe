@@ -29,7 +29,16 @@ export default function TabRecord({ onFileReady, disabled }: Props) {
     if (disabled) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      // Pick smallest supported format; audioBitsPerSecond keeps file size down
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "";
+      const mr = new MediaRecorder(stream, {
+        ...(mimeType ? { mimeType } : {}),
+        audioBitsPerSecond: 32000, // ~240KB/min — keeps 4MB limit ≈ 16 min
+      });
       chunksRef.current = [];
 
       mr.ondataavailable = (e) => {
@@ -92,6 +101,7 @@ export default function TabRecord({ onFileReady, disabled }: Props) {
         <div className="text-center">
           <p className="font-medium text-warm-700">點擊麥克風開始錄音</p>
           <p className="text-sm text-warm-400 mt-1">支援多人對話，自動識別說話者</p>
+          <p className="text-xs text-warm-300 mt-1">建議錄音長度不超過 15 分鐘</p>
         </div>
       )}
       {state === "recording" && (

@@ -17,6 +17,14 @@ export default function Home() {
 
   const handleStart = async (file: File, language: Language) => {
     setError("");
+
+    // Client-side size guard (applies to upload AND recording)
+    const MAX_MB = 4;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      setError(`檔案 ${(file.size / 1024 / 1024).toFixed(1)} MB 超過上限 ${MAX_MB} MB，請縮短錄音或壓縮檔案後再試。`);
+      return;
+    }
+
     setStage("processing");
     setProcessingFile(file.name);
     setProcessStep("transcribe");
