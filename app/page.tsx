@@ -36,7 +36,7 @@ export default function Home() {
         throw new Error("檔案超過伺服器上限（4 MB），請壓縮後重試。");
       }
       const transcribeText = await transcribeRes.text();
-      let transcribeData: Record<string, unknown>;
+      let transcribeData: { segments: AppResult["segments"]; fullText: string; duration: number; language: string; speakerCount: number; error?: string };
       try {
         transcribeData = JSON.parse(transcribeText);
       } catch {
@@ -46,8 +46,7 @@ export default function Home() {
         throw new Error((transcribeData.error as string) ?? "語音轉文字失敗");
       }
 
-      const { segments, fullText, duration, language: detectedLang, speakerCount } =
-        transcribeData;
+      const { segments, fullText, duration, language: detectedLang, speakerCount } = transcribeData;
 
       // ── Step 2: Summarize ──────────────────────────────────────────────────
       setProcessStep("summarize");
@@ -58,7 +57,7 @@ export default function Home() {
         body: JSON.stringify({ text: fullText }),
       });
       const summarizeText = await summarizeRes.text();
-      let summarizeData: Record<string, unknown>;
+      let summarizeData: { keyPoints?: string[]; actionItems?: string[]; suggestions?: string[]; error?: string };
       try {
         summarizeData = JSON.parse(summarizeText);
       } catch {

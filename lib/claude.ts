@@ -1,7 +1,20 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error("Missing env: ANTHROPIC_API_KEY");
+let _client: Anthropic | null = null;
+
+export function getAnthropic(): Anthropic {
+  if (!_client) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("Missing env: ANTHROPIC_API_KEY");
+    }
+    _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _client;
 }
 
-export const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+/** @deprecated use getAnthropic() */
+export const anthropic = new Proxy({} as Anthropic, {
+  get(_, prop) {
+    return (getAnthropic() as unknown as Record<string | symbol, unknown>)[prop];
+  },
+});
