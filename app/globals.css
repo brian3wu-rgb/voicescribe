@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body { @apply bg-cream text-warm-800; }
+  * { box-sizing: border-box; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-primary hover:bg-primary-hover text-white
+           font-semibold rounded-xl px-5 py-3
+           transition-all duration-200 active:scale-95
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-1.5
+           bg-white hover:bg-cream-100 text-warm-700 hover:text-warm-800
+           border border-warm-200 font-medium rounded-lg px-3.5 py-2
+           text-sm transition-all duration-150 active:scale-95;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-card border border-warm-200/60;
+  }
+  .tab-btn {
+    @apply flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium
+           transition-all duration-150;
+  }
+  .tab-btn-active {
+    @apply bg-white text-warm-800 shadow-sm;
+  }
+  .tab-btn-inactive {
+    @apply text-warm-500 hover:text-warm-700;
+  }
+  .input-base {
+    @apply w-full bg-white border border-warm-200 rounded-xl px-4 py-3
+           text-warm-800 placeholder-warm-400 text-sm
+           focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50
+           transition-all;
+  }
+  .export-btn {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5
+           bg-cream-100 hover:bg-cream-200 text-warm-600 hover:text-warm-800
+           text-xs font-medium rounded-lg border border-warm-200/80
+           transition-all active:scale-95;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-warm-300 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-warm-400; }
+
+/* Recording pulse ring */
+@keyframes ping-slow {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.ping-slow { animation: ping-slow 1.8s ease-out infinite; }
+
+/* Sound wave bars */
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.5); }
+  50%       { transform: scaleY(1); }
+}
+.wave-bar {
+  display: inline-block;
+  width: 3px;
+  background: currentColor;
+  border-radius: 9999px;
+  animation: wave 1.4s ease-in-out infinite;
+}
+.wave-bar:nth-child(2) { animation-delay: 0.15s; }
+.wave-bar:nth-child(3) { animation-delay: 0.3s; }
+.wave-bar:nth-child(4) { animation-delay: 0.45s; }
+.wave-bar:nth-child(5) { animation-delay: 0.6s; }
