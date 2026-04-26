@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
+import { Mp3Encoder } from "lamejs";
 
 interface Props {
   onFileReady: (file: File) => void;
@@ -14,6 +13,8 @@ type UploadState = "idle" | "oversized" | "compressing" | "compressed" | "ready"
 const FORMATS = ["MP3", "WAV", "M4A", "MP4"];
 const ACCEPT = ".mp3,.wav,.m4a,.m4v,.mp4,.ogg,.webm,audio/*";
 const MAX_BYTES = 4 * 1024 * 1024;
+const TARGET_SAMPLE_RATE = 16000;
+const TARGET_KBPS = 32;
 
 export default function TabUpload({ onFileReady, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -22,7 +23,6 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
   const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [compressedFile, setCompressedFile] = useState<File | null>(null);
   const [progress, setProgress] = useState(0);
-  const ffmpegRef = useRef<FFmpeg | null>(null);
 
   const handleFile = useCallback(
     (file: File | null | undefined) => {
@@ -55,47 +55,64 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
     setProgress(0);
 
     try {
-      if (!ffmpegRef.current) {
-        ffmpegRef.current = new FFmpeg();
+      // Step 1: Decode audio via Web Audio API
+      const arrayBuffer = await originalFile.arrayBuffer();
+      setProgress(10);
+
+      const audioCtx = new AudioContext();
+      let audioBuffer: AudioBuffer;
+      try {
+        audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      } finally {
+        await audioCtx.close();
       }
-      const ffmpeg = ffmpegRef.current;
+      setProgress(30);
 
-      if (!ffmpeg.loaded) {
-        await ffmpeg.load({
-          coreURL: await toBlobURL("/ffmpeg/ffmpeg-core.js", "text/javascript"),
-          wasmURL: await toBlobURL("/ffmpeg/ffmpeg-core.wasm", "application/wasm"),
-        });
+      // Step 2: Resample to 16 kHz mono via OfflineAudioContext
+      const frameCount = Math.ceil(audioBuffer.duration * TARGET_SAMPLE_RATE);
+      const offlineCtx = new OfflineAudioContext(1, frameCount, TARGET_SAMPLE_RATE);
+      const source = offlineCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(offlineCtx.destination);
+      source.start(0);
+      const resampled = await offlineCtx.startRendering();
+      setProgress(60);
+
+      // Step 3: Float32 → Int16
+      const floats = resampled.getChannelData(0);
+      const pcm = new Int16Array(floats.length);
+      for (let i = 0; i < floats.length; i++) {
+        pcm[i] = Math.max(-32768, Math.min(32767, floats[i] * 32768));
       }
 
-      ffmpeg.on("progress", ({ progress: p }) => {
-        setProgress(Math.round(p * 100));
-      });
+      // Step 4: Encode to MP3 at 32 kbps
+      const encoder = new Mp3Encoder(1, TARGET_SAMPLE_RATE, TARGET_KBPS);
+      const chunks: ArrayBuffer[] = [];
+      const blockSize = 1152;
+      for (let i = 0; i < pcm.length; i += blockSize) {
+        const block = pcm.subarray(i, i + blockSize);
+        const encoded = encoder.encodeBuffer(block);
+        if (encoded.length > 0) {
+          const copy = new ArrayBuffer(encoded.length);
+          new Uint8Array(copy).set(encoded as unknown as Uint8Array);
+          chunks.push(copy);
+        }
+      }
+      const tail = encoder.flush();
+      if (tail.length > 0) {
+        const copy = new ArrayBuffer(tail.length);
+        new Uint8Array(copy).set(tail as unknown as Uint8Array);
+        chunks.push(copy);
+      }
+      setProgress(95);
 
-      const ext = originalFile.name.split(".").pop() ?? "bin";
-      const inputName = `input.${ext}`;
-      await ffmpeg.writeFile(inputName, await fetchFile(originalFile));
-      await ffmpeg.exec([
-        "-i", inputName,
-        "-ac", "1",
-        "-ar", "16000",
-        "-b:a", "32k",
-        "output.mp3",
-      ]);
-
-      const data = await ffmpeg.readFile("output.mp3");
-      // readFile returns Uint8Array | string; copy to a plain ArrayBuffer for Blob compat
-      const src = data instanceof Uint8Array ? data : new TextEncoder().encode(data as string);
-      const plainBuffer = src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength) as ArrayBuffer;
-      const blob = new Blob([plainBuffer], { type: "audio/mpeg" });
+      const blob = new Blob(chunks, { type: "audio/mpeg" });
       const baseName = originalFile.name.replace(/\.[^.]+$/, "");
       const compressed = new File([blob], `${baseName}_compressed.mp3`, {
         type: "audio/mpeg",
       });
 
-      // cleanup
-      try { await ffmpeg.deleteFile(inputName); } catch { /* ignore */ }
-      try { await ffmpeg.deleteFile("output.mp3"); } catch { /* ignore */ }
-
+      setProgress(100);
       setCompressedFile(compressed);
       setUploadState("compressed");
     } catch (err) {
@@ -129,7 +146,7 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
     if (inputRef.current) inputRef.current.value = "";
   }, []);
 
-  // ── Render helpers ─────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   if (uploadState === "idle") {
     return (
@@ -141,9 +158,7 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
         className={[
           "relative border-2 border-dashed rounded-2xl p-10 text-center",
           "transition-all duration-200 cursor-pointer select-none",
-          dragging
-            ? "border-primary bg-primary-50"
-            : "border-warm-200 hover:border-warm-300 bg-cream-50",
+          dragging ? "border-primary bg-primary-50" : "border-warm-200 hover:border-warm-300 bg-cream-50",
           disabled ? "pointer-events-none opacity-60" : "",
         ].join(" ")}
       >
@@ -175,7 +190,6 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
     const sizeMB = (originalFile.size / 1024 / 1024).toFixed(1);
     return (
       <div className="rounded-2xl border border-warm-200 bg-cream-50 p-6 flex flex-col gap-4">
-        {/* File info */}
         <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-warm-100">
           <div className="w-10 h-10 bg-warm-100 rounded-lg flex items-center justify-center shrink-0">
             <MusicIcon />
@@ -185,12 +199,10 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
             <p className="text-xs text-red-500 font-semibold">{sizeMB} MB — 超過 4 MB 上限</p>
           </div>
         </div>
-        {/* Warning */}
         <div className="flex items-start gap-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-xl p-3">
           <span className="mt-0.5">⚠️</span>
           <p>此檔案超過伺服器上限，需先壓縮才能上傳。壓縮在瀏覽器本地執行，音檔不會離開你的裝置。</p>
         </div>
-        {/* Buttons */}
         <button
           onClick={handleCompress}
           className="w-full py-3 rounded-xl bg-orange-500 hover:bg-orange-600 active:scale-95 text-white font-semibold transition-all"
@@ -208,7 +220,6 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
     const sizeMB = (originalFile.size / 1024 / 1024).toFixed(1);
     return (
       <div className="rounded-2xl border border-warm-200 bg-cream-50 p-6 flex flex-col gap-4">
-        {/* File info */}
         <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-warm-100">
           <div className="w-10 h-10 bg-warm-100 rounded-lg flex items-center justify-center shrink-0">
             <MusicIcon />
@@ -218,7 +229,6 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
             <p className="text-xs text-warm-400">{sizeMB} MB</p>
           </div>
         </div>
-        {/* Progress */}
         <div>
           <div className="flex justify-between text-xs text-warm-500 mb-1">
             <span>壓縮中…</span>
@@ -244,7 +254,6 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
     const saved = (((originalFile.size - compressedFile.size) / originalFile.size) * 100).toFixed(1);
     return (
       <div className="rounded-2xl border border-warm-200 bg-cream-50 p-6 flex flex-col gap-4">
-        {/* Compression result */}
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
           <p className="text-xs font-semibold text-orange-700 mb-2">壓縮完成</p>
           <div className="flex items-center justify-between text-sm">
@@ -262,7 +271,6 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
             </div>
           </div>
         </div>
-        {/* Upload button */}
         <button
           onClick={handleUploadCompressed}
           className="w-full py-3 rounded-xl bg-green-500 hover:bg-green-600 active:scale-95 text-white font-semibold transition-all"
@@ -303,10 +311,7 @@ export default function TabUpload({ onFileReady, disabled }: Props) {
             </div>
           </div>
         )}
-        <button
-          onClick={handleReset}
-          className="text-sm text-warm-400 hover:text-warm-600 text-center"
-        >
+        <button onClick={handleReset} className="text-sm text-warm-400 hover:text-warm-600 text-center">
           重新選擇檔案
         </button>
       </div>
